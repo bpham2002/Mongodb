@@ -6,12 +6,14 @@ var request = require('request')
 // $('h1').addClass('weirdClass')
 // console.log($.html())
 var express = require('express')
+var exphbs = require('express-handlebars');
 var bodyparser = require('body-parser')
 var mongoose = require('mongoose')
 var db = require('./models')
 mongoose.connect('mongodb://localhost/libraryDB')
 var app = express()
-
+app.engine('handlebars', exphbs({ defaultLayout: 'main' }));
+app.set('view engine', 'handlebars');
 request('https://stackoverflow.com', function(e, r, html) {
     if (e) throw e
     var $ = cheerio.load(html)
