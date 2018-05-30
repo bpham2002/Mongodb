@@ -1,4 +1,6 @@
+// Exporting an object containing all of our models
+
 module.exports = {
-  'book': require('./bookModel.js'),
-  'library': require('./librarymodel.js')
-}
+    Article: require("./Article"),
+    Note: require("./Note")
+};

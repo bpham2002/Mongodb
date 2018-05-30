@@ -1,96 +1,131 @@
-var cheerio = require('cheerio')
-var request = require('request')
+var express = require("express");
+var bodyParser = require("body-parser");
+var logger = require("morgan");
+var path = require('path')
+var mongoose = require("mongoose");
+var exphbs = require('express-handlebars')
 
-// var $ = cheerio.load('<div><h1>hello World!</h1><p class="myfunclass">Blah blah</p></div>')
-// $('.myfunclass').text()
-// $('h1').addClass('weirdClass')
-// console.log($.html())
-var express = require('express')
-var exphbs = require('express-handlebars');
-var bodyparser = require('body-parser')
-var mongoose = require('mongoose')
-var db = require('./models')
-mongoose.connect('mongodb://localhost/libraryDB')
-var app = express()
-app.engine('handlebars', exphbs({ defaultLayout: 'main' }));
-app.set('view engine', 'handlebars');
-request('https://stackoverflow.com', function(e, r, html) {
-    if (e) throw e
-    var $ = cheerio.load(html)
-    $('.question-hyperlink').each(function(i, element) {
-        var title = $(element).html()
-            //console.log($(element).attr('href'))
-        console.log(title)
-    })
-})
-app.use(bodyparser.urlencoded({ extended: true }))
-app.use(bodyparser.json())
+// Our scraping tools
+// Axios is a promised-based http library, similar to jQuery's Ajax method
+// It works on the client and on the server
+var axios = require("axios");
+var cheerio = require("cheerio");
 
-app.get('/weirdAuthor', function(req, res) {
-    db.book.find({}).then(function(r) {
-        var Book = db.book
-        var changedBook = new Book(r[0])
-        changedBook.changeTheAuthor()
-        db.book.create(changedBook).then(function(r) {
-            res.send(r)
-        }).catch(function(e) {
-            res.send(e)
+// Require all models
+var db = require("./models");
+
+var PORT = 3000;
+
+// Initialize Express
+var app = express();
+
+// Configure middleware
+
+// Use morgan logger for logging requests
+app.use(logger("dev"));
+app.engine('handlebars', exphbs({ defaultLayout: 'main', extname: '.handlebars' }));
+app.set('view engine', '.handlebars');
+
+// Use body-parser for handling form submissions
+app.use(bodyParser.urlencoded({ extended: true }));
+// Use express.static to serve the public folder as a static directory
+app.use(express.static("public"));
+
+// Connect to the Mongo DB
+mongoose.connect("mongodb://localhost/libraryDB");
+
+// Routes
+
+
+// A GET route for scraping the echoJS website
+app.get("/scrape", function (req, res) {
+    // First, we grab the body of the html with request
+    axios.get("http://www.echojs.com/").then(function (response) {
+        // Then, we load that into cheerio and save it to $ for a shorthand selector
+        var $ = cheerio.load(response.data);
+
+        // Now, we grab every h2 within an article tag, and do the following:
+        $("article h2").each(function (i, element) {
+            // Save an empty result object
+            var result = {};
+
+            // Add the text and href of every link, and save them as properties of the result object
+            result.title = $(this)
+                .children("a")
+                .text();
+            result.link = $(this)
+                .children("a")
+                .attr("href");
+
+            // Create a new Article using the `result` object built from scraping
+            db.Article.create(result)
+                .then(function (dbArticle) {
+                    // View the added result in the console
+                    console.log(dbArticle);
+                })
+                .catch(function (err) {
+                    // If an error occurred, send it to the client
+                    return res.json(err);
+                });
+        });
+
+        // If we were able to successfully scrape and save an Article, send a message to the client
+        res.send("Scrape Complete");
+    });
+});
+
+// Route for getting all Articles from the db
+app.get("/", function (req, res) {
+    // Grab every document in the Articles collection
+    db.Article.find({})
+        .then(function (dbArticle) {
+            // If we were able to successfully find Articles, send them back to the client
+            //res.json(dbArticle);
+            res.render('home')
         })
-    }).catch(function(e) {
-        res.send(e)
-    })
-})
-app.post('/library', function(req, res) {
-    db.library.create({
-        name: 'myawesomelibrary',
-        location: 'Irvine, CA',
-        rating: 2
-    }).then(function(r) {
-        res.send(r)
-    }).catch(function(r) {
-        res.send(r)
-    })
-})
+        .catch(function (err) {
+            // If an error occurred, send it to the client
+            res.json(err);
+        });
+});
 
-app.get('/library', function(req, res) {
-    db.library.find({ 'name': 'myawesomelibrary' }).populate('books').then(function(r) {
-        res.send(r)
-    }).catch(function(e) {
-        res.send(e)
-    })
-})
-
-app.post('/book/new/:title/:pages/:author/:libraryname', function(req, res) {
-    db.book.create({
-        title: req.params.title,
-        pages: req.params.pages,
-        author: req.params.author
-    }).then(function(r) {
-        return db.library.update({ 'name': 'myawesomelibrary' }, { $push: { books: r._id } }).then(function(r) {
-            res.send(r)
+// Route for grabbing a specific Article by id, populate it with it's note
+app.get("/articles/:id", function (req, res) {
+    // Using the id passed in the id parameter, prepare a query that finds the matching one in our db...
+    db.Article.findOne({ _id: req.params.id })
+        // ..and populate all of the notes associated with it
+        .populate("note")
+        .then(function (dbArticle) {
+            // If we were able to successfully find an Article with the given id, send it back to the client
+            res.json(dbArticle);
         })
-    }).catch(function(e) {
-        res.send(e)
-    })
-})
+        .catch(function (err) {
+            // If an error occurred, send it to the client
+            res.json(err);
+        });
+});
 
-app.get('/book', function(req, res) {
-    db.book.find({}).then(function(r) {
-        res.send(r)
-    }).catch(function(e) {
-        res.send(e)
-    })
-})
+// Route for saving/updating an Article's associated Note
+app.post("/articles/:id", function (req, res) {
+    // Create a new note and pass the req.body to the entry
+    db.Note.create(req.body)
+        .then(function (dbNote) {
+            // If a Note was created successfully, find one Article with an `_id` equal to `req.params.id`. Update the Article to be associated with the new Note
+            // { new: true } tells the query that we want it to return the updated User -- it returns the original by default
+            // Since our mongoose query returns a promise, we can chain another `.then` which receives the result of the query
+            return db.Article.findOneAndUpdate({ _id: req.params.id }, { note: dbNote._id }, { new: true });
+        })
+        .then(function (dbArticle) {
+            // If we were able to successfully update an Article, send it back to the client
+            res.json(dbArticle);
+        })
+        .catch(function (err) {
+            // If an error occurred, send it to the client
+            res.json(err);
+        });
+});
 
-app.put('/book/:title', function(req, res) {
-    db.book.update({ 'title': req.params.title }, { $set: { 'pages': 9000 } }).then(function(r) {
-        res.send(r)
-    }).catch(function(e) {
-        res.send(e)
-    })
-})
-
-app.listen(3000, function(e) {
-    if (e) throw e
-    console.log('Listening on Port 3000')
-})
+// Start the server
+app.listen(PORT, function () {
+    console.log("App running on port " + PORT + "!");
+});
