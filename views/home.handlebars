@@ -5,15 +5,10 @@
     <p>It uses utility classes for typography and spacing to space content out within the larger container.</p>
     <a class="btn btn-primary btn-lg" href="#" role="button">Learn more</a>
 </div>
-<div class="container">
-    <!-- Content here -->
-<div id="wrapper">
-    <h1>Note Scraper</h1>
-    <h2>
-        <i>If you can do this...the homework should be no problem.</i>
-    </h2>
-    <div id="articles"></div>
-    <div id="notes"></div>
-</div>
-</div>
+
+    {{#each Articles}}
+    <h1>{{title}}</h1>
+    <a class="btn btn-primary btn-sm" href="{{link}}" role="button">Read</a>
+    {{/each}}
+
 
